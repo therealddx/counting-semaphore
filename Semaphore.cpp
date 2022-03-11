@@ -27,9 +27,9 @@ Semaphore::Semaphore(uint32_t arg_flag_max, std::string arg_log_path)
     if (_log->is_open()) // if open, `operator<<`.
     {
       (*_log)
-        << "+++++++++++++++++++++" << std::endl
-        << "+++ Semaphore Log +++" << std::endl
-        << "+++++++++++++++++++++" << std::endl;
+        << "+-------------------+" << std::endl
+        << "|   Semaphore Log   |" << std::endl
+        << "+-------------------+" << std::endl;
     }
   }
 }
@@ -42,8 +42,12 @@ Semaphore::~Semaphore()
     Give(each.first);
   }
 
-  // close the log.
+  // all other members are stack-allocated and/or primitives.
+  // of primary import is to clear out the OO references,
+  //   as is done above.
   //
+
+  // close the log, if it was instantiated.
   if (_log != nullptr)
   {
     if (_log->is_open()) { _log->close(); }
@@ -51,17 +55,22 @@ Semaphore::~Semaphore()
   }
 }
 
-Semaphore::Error Semaphore::Take(SemaphoreClient* arg_client, uint32_t arg_timeout_ms, uint32_t arg_dtimeout_ms)
+Semaphore::Error Semaphore::Take
+  ( SemaphoreClient* arg_client
+  , uint32_t arg_timeout_ms
+  , uint32_t arg_dtimeout_ms
+  )
 {
   // null-check.
   if (arg_client == nullptr) { return Semaphore::E_TakeFail; }
 
-  // lock the map.
-  //   require faithful reads and polls on who's available and working.
+  // lock the maps to the current thread.
   //
   _map_lock.lock();
 
   // if 'arg_client' is already in '_working':
+  //   (map::find doesn't return end() -- denotes client is present)
+  //   (flag index for that client isn't 0 -- denotes client is using a flag index)
   //   exit: already have a spot
   //
   if (_working.find(arg_client) != _working.end() && _working[arg_client] != 0)
@@ -77,18 +86,18 @@ Semaphore::Error Semaphore::Take(SemaphoreClient* arg_client, uint32_t arg_timeo
       doLog(ss.str());
     }
 
-    // unlock map + ret.
+    // unlock maps to other threads + ret.
     _map_lock.unlock();
     return Semaphore::E_TakeFail;
   }
 
-  // not a fan of doing anything more complex than this.
-  // reason being--
-  //   using a `std::unique_lock<T>::try_lock_for` would only be a guarantee
-  //     of "at least" 'arg_timeout_ms', per cppreference.
-  //   so, it wouldn't be a "more exact" wait.
+  // block this thread for a maximum of'arg_timeout_ms',
+  //   in increments of 'arg_dtimeout_ms'.
   //
-  // this approach, though (total time/delta time) grants me a little extra freedom.
+  // note:
+  //   blocking while '_map_lock' is active is not so shameful,
+  //     since any other clients waiting on '_map_lock' would end up here too.
+  //   but, should the time spent at `_map_lock.lock` count against 'arg_timeout_ms'?
   // 
   uint32_t wait_so_far = 0;
   while (numAvailableFlags() == 0 && wait_so_far < arg_timeout_ms)
@@ -104,6 +113,8 @@ Semaphore::Error Semaphore::Take(SemaphoreClient* arg_client, uint32_t arg_timeo
       doLog(ss.str());
     }
   }
+
+  // if there's still no available flags after waiting:
   if (numAvailableFlags() == 0)
   {
     if (canLog())
@@ -117,7 +128,7 @@ Semaphore::Error Semaphore::Take(SemaphoreClient* arg_client, uint32_t arg_timeo
       doLog(ss.str());
     }
 
-    // unlock the map + ret.
+    // unlock the maps + ret.
     _map_lock.unlock();
     return Semaphore::E_TakeFail;
   }
@@ -138,13 +149,15 @@ Semaphore::Error Semaphore::Take(SemaphoreClient* arg_client, uint32_t arg_timeo
     doLog(ss.str());
   }
 
+  // execute the 'take'.
+  //   the client is assigned the first available flag.
+  //   that flag gets marked as 'not available'.
+  // 
   _working[arg_client] = firstAvailableFlag();
   _available_flags[firstAvailableFlag()] = false;
 
-  // unlock the map.
+  // unlock the maps + ret.
   _map_lock.unlock();
-
-  // ret.
   return Semaphore::E_OK;
 }
 
@@ -153,12 +166,13 @@ Semaphore::Error Semaphore::Give(SemaphoreClient* arg_sem_client)
   // null-check.
   if (arg_sem_client == nullptr) { return Semaphore::E_GiveFail; }
 
-  // lock the map.
-  //   require faithful reads and polls on '_flag'.
+  // lock the maps to the current thread.
   //
   _map_lock.lock();
 
   // if 'arg_sem_client' isn't in '_working':
+  //   (map::find returns end() -- denotes client is not present)
+  //   (flag index for that client is 0 -- denotes client is not present)
   //   exit: must have a spot in order to enter.
   //
   if (_working.find(arg_sem_client) == _working.end() || _working[arg_sem_client] == 0)
@@ -170,7 +184,7 @@ Semaphore::Error Semaphore::Give(SemaphoreClient* arg_sem_client)
       doLog(ss.str());
     }
 
-    // unlock.
+    // unlock maps to other threads + ret.
     _map_lock.unlock();
     return Semaphore::E_GiveFail;
   }
@@ -191,29 +205,34 @@ Semaphore::Error Semaphore::Give(SemaphoreClient* arg_sem_client)
     doLog(ss.str());
   }
 
-  // todo:
-  //   `std::map<>::erase` would be cleaner, but it throws a segv.
-  //   figure out why...?
+  // execute the 'give':
+  //   the flag index for 'arg_sem_client'-- mark it as available now.
+  //   mark 'arg_sem_client' as, no longer using any flag index.
   //
-  // member '_flag' ranges [1..<_flag_max>].
-  //   so, '0' is appropriate to denote "no client assigned" for a flag value.
+  // note:
+  //   `std::map<>::erase` might be cleaner, but it throws a segv.
+  //   figure out why...?
   //
   _available_flags[_working[arg_sem_client]] = true;
   _working[arg_sem_client] = 0;
 
-  // unlock.
+  // unlock the maps to other threads + ret.
   _map_lock.unlock();
-
-  // ret.
   return Semaphore::E_OK;
 }
 
 void Semaphore::DumpState()
 {
+  // lock the maps to this thread.
+  //   this method requires a known state for the flag indexes.
+  //
   _map_lock.lock();
 
+  // vars.
   std::stringstream ss;
 
+  // compile and log the talkout string.
+  //
   ss << "*****************************************************" << std::endl;
   ss << "*** client name : flag" << " ('" << numAvailableFlags() << "' flags available)" << std::endl;
   for (auto each : _working)
@@ -224,6 +243,7 @@ void Semaphore::DumpState()
 
   doLog(ss.str());
 
+  // unlock the maps to other threads.
   _map_lock.unlock();
 }
 
@@ -231,7 +251,18 @@ void Semaphore::doLog(std::string arg_str)
 {
   if (_log == nullptr || !_log->is_open())
   {
-    // do nothing
+    // do nothing.
+    //
+    // this if-structure, and delegation in general to `canLog` and `doLog`,
+    //   helps implement the optional debug logging.
+    //
+    // when enabled,
+    //   debug logging is simple to inject into member functions.
+    //
+    // when not enabled,
+    //   debug logging is skipped with `canLog` and this if-structure;
+    //     and no time is wasted compiling and outputting log messages.
+    // 
   }
   else
   {
@@ -246,17 +277,17 @@ void Semaphore::doLog(std::string arg_str)
 
 uint32_t Semaphore::firstAvailableFlag()
 {
-  uint32_t rtn_flag = 0;
-
-  for (auto each : _available_flags)
+  for (auto each : _available_flags) // <uint32_t, bool>
   {
-    if (each.second == true)
+    if (each.second == true) // denotes 'available'
     {
-      return each.first;
+      return each.first; // return that flag index
     }
   }
 
-  // this should be unreachable... verify `numAvailableFlags > 0` before entry.
+  // this should be unreachable...
+  //   verify `numAvailableFlags() > 0` before entry.
+  //
   return 0;
 }
 
@@ -264,7 +295,7 @@ uint32_t Semaphore::numAvailableFlags()
 {
   uint32_t rtn_count = 0;
 
-  for (auto each : _available_flags)
+  for (auto each : _available_flags) // <uint32_t, bool>
   {
     if (each.second) { rtn_count++; }
   }

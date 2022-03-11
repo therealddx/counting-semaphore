@@ -55,8 +55,8 @@ void loop_dump(Semaphore* arg_sem, uint32_t arg_max_timeout_ms)
   {
     arg_sem->DumpState();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-    elapsed_ms += 2000;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    elapsed_ms += 1000;
   }
 
   return;
@@ -85,14 +85,14 @@ int main()
   std::thread t3( &loop_drone, sc_3, my_sem, 10000,  500 );
   std::thread t4( &loop_drone, sc_4, my_sem, 10000,  800 );
   std::thread t5( &loop_drone, sc_5, my_sem, 10000, 1000 );
-  std::thread tdump ( &loop_dump, my_sem, 10000 );
+  // std::thread tdump ( &loop_dump, my_sem, 10000 );
 
   t1.join();
   t2.join();
   t3.join();
   t4.join();
   t5.join();
-  tdump.join();
+  // tdump.join();
 
   // cleanup.
   delete my_sem; // my_sem holds agg. references to SemaphoreClient's... detach those agg.'s
