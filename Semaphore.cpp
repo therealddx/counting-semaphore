@@ -36,6 +36,9 @@ Semaphore::Semaphore(uint32_t arg_flag_max, std::string arg_log_path)
 
 Semaphore::~Semaphore()
 {
+  // report entry.
+  doLog("Semaphore::~Semaphore");
+
   // force out all working semaphore clients.
   for (auto each : _working)
   {
