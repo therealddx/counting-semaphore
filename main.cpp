@@ -4,7 +4,7 @@
 /**
  * loop_drone
  *   to 'drone' is to 'semaphore take', 'work', and 'semaphore give', in succession.
- *   this function 'drone's on for 'arg_total_drone_time_ms' milliseconds.
+ *   this function 'drone's on for 'arg_total_drone_time_s' seconds.
  *     while holding onto the Semaphore.
  *
  */
@@ -16,31 +16,45 @@ void loop_drone
   )
 {
   // vars.
-  uint32_t drone_time_ms = 0; // tracks roughly against 'arg_total_drone_time_ms'
-  uint32_t take_patience_ms = 1000; // represents time lost if timeout while waiting for semaphore
-  uint32_t work_time_ms = arg_work_time_ms; // represents time required to do 'work' with the semaphore
-  uint32_t sleep_time_ms = arg_work_time_ms; // after working, sleep this long.
+  double sel_total_drone_time_s = static_cast<double>(arg_total_drone_time_ms) / 1000.0;
 
-  while (drone_time_ms < arg_total_drone_time_ms)
+  std::chrono::time_point<std::chrono::steady_clock> time_entry =
+    std::chrono::steady_clock::now();
+
+  std::chrono::duration<double> time_elapsed = 
+    std::chrono::steady_clock::now() - time_entry;
+
+  std::chrono::duration<double> time_end(sel_total_drone_time_s);
+
+  uint32_t work_time_ms     = arg_work_time_ms; // time spent working
+  uint32_t sleep_time_ms    = arg_work_time_ms; // time spent sleeping, after working
+  uint32_t take_patience_ms = 200;              // max time to wait for a semaphore flag
+
+  while (true)
   {
+    if (std::chrono::steady_clock::now() - time_entry >= time_end) { break; } // evaluate for exit.
+
     // try take + error-check.
     Semaphore::Error e_take = arg_sem->Take(arg_sem_client, take_patience_ms, take_patience_ms);
     if (e_take != Semaphore::E_OK)
     {
-      drone_time_ms += take_patience_ms;
       continue;
     }
+
+    if (std::chrono::steady_clock::now() - time_entry >= time_end) { break; } // evaluate for exit.
   
-    // do fake work (sleep).
+    // do fake work (sleep while holding the lock).
     std::this_thread::sleep_for(std::chrono::milliseconds(work_time_ms));
-    drone_time_ms += work_time_ms;
   
+    if (std::chrono::steady_clock::now() - time_entry >= time_end) { break; } // evaluate for exit.
+
     // give.
     arg_sem->Give(arg_sem_client);
 
+    if (std::chrono::steady_clock::now() - time_entry >= time_end) { break; } // evaluate for exit.
+
     // sleep again.
     std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time_ms));
-    drone_time_ms += sleep_time_ms;
   }
 
   // ret.
@@ -80,11 +94,11 @@ int main()
 
   // make the threads.
   //
-  std::thread t1( &loop_drone, sc_1, my_sem, 10000,  200 );
-  std::thread t2( &loop_drone, sc_2, my_sem, 10000,  400 );
-  std::thread t3( &loop_drone, sc_3, my_sem, 10000,  500 );
-  std::thread t4( &loop_drone, sc_4, my_sem, 10000,  800 );
-  std::thread t5( &loop_drone, sc_5, my_sem, 10000, 1000 );
+  std::thread t1( &loop_drone, sc_1, my_sem, 10000, 200 );
+  std::thread t2( &loop_drone, sc_2, my_sem, 10000, 200 );
+  std::thread t3( &loop_drone, sc_3, my_sem, 10000, 200 );
+  std::thread t4( &loop_drone, sc_4, my_sem, 10000, 200 );
+  std::thread t5( &loop_drone, sc_5, my_sem, 10000, 200 );
   // std::thread tdump ( &loop_dump, my_sem, 10000 );
 
   t1.join();

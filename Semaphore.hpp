@@ -132,12 +132,15 @@ private:
   uint32_t                             _flag_max;
   std::mutex                           _map_lock;
 
-  // private methods: logging
+  // private members: logging
   // 
   bool canLog() { return ( ! (_log == nullptr || !_log->is_open()) ) ; }
   void doLog(std::string);
   std::ofstream* _log;
   std::mutex _log_lock; // lock for access to the log.
+
+  typedef std::chrono::time_point<std::chrono::steady_clock> Semaphore_time_point;
+  Semaphore_time_point _inception_time;
 };
 
 #endif // SEMAPHORE_HPP

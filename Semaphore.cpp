@@ -1,5 +1,6 @@
 #include "Semaphore.hpp"
 #include <sstream>
+#include <iomanip>
 
 Semaphore::Semaphore(uint32_t arg_flag_max, std::string arg_log_path)
 {
@@ -32,12 +33,15 @@ Semaphore::Semaphore(uint32_t arg_flag_max, std::string arg_log_path)
         << "+-------------------+" << std::endl;
     }
   }
+
+  // assign time of inception for this instance.
+  _inception_time = std::chrono::steady_clock::now();
 }
 
 Semaphore::~Semaphore()
 {
   // report entry.
-  doLog("Semaphore::~Semaphore");
+  doLog("Semaphore::~Semaphore\n");
 
   // force out all working semaphore clients.
   for (auto each : _working)
@@ -271,7 +275,15 @@ void Semaphore::doLog(std::string arg_str)
   {
     _log_lock.lock();
 
+    Semaphore_time_point current_time = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_time = current_time - _inception_time;
+   
+    (*_log)
+      << "[" << std::fixed << std::setprecision(3) << std::left
+      << elapsed_time.count() * 1000.0 << "]" << " ";
+
     (*_log) << arg_str;
+
     _log->flush();
 
     _log_lock.unlock();

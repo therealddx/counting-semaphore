@@ -4,6 +4,8 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <chrono>
+#include <thread>
 
 #endif // STDINCLUDE_HPP
 
