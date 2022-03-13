@@ -72,7 +72,8 @@ Semaphore::Error Semaphore::Take
   if (arg_client == nullptr) { return Semaphore::E_TakeFail; }
 
   // lock the maps to the current thread.
-  //
+  // 
+  _take_lock.lock();
   _map_lock.lock();
 
   // if 'arg_client' is already in '_working':
@@ -95,22 +96,35 @@ Semaphore::Error Semaphore::Take
 
     // unlock maps to other threads + ret.
     _map_lock.unlock();
+    _take_lock.unlock();
     return Semaphore::E_TakeFail;
   }
 
-  // block this thread for a maximum of'arg_timeout_ms',
+  // block this thread for a maximum of 'arg_timeout_ms',
   //   in increments of 'arg_dtimeout_ms'.
   //
   // note:
-  //   blocking while '_map_lock' is active is not so shameful,
+  //   sleeping while '_map_lock' is active is not so shameful for other threads waiting on `Take`,
   //     since any other clients waiting on '_map_lock' would end up here too.
-  //   but, should the time spent at `_map_lock.lock` count against 'arg_timeout_ms'?
+  //   though-- should the time spent obtaining mutexes, count against 'arg_timeout_ms'?
+  //
+  // note:
+  //   sleeping while '_map_lock' is active is shameful, for other threads waiting on `Give`.
+  //     say an eating thread finishes in 200ms, then waits for '_map_lock' at `Semaphore::Give`.
+  //     say a starving thread is holding '_map_lock' for 1000ms, in intervals of 200ms.
+  // 
+  //   in the above case, the starving thread is literally starving itself,
+  //     by locking out the thread that is trying to call `Give`.
   // 
   uint32_t wait_so_far = 0;
   while (numAvailableFlags() == 0 && wait_so_far < arg_timeout_ms)
   {
+    _map_lock.unlock(); // let `Give` in, but keep '_take_lock' to block other `Take`s.
+
     std::this_thread::sleep_for(std::chrono::milliseconds(arg_dtimeout_ms));
     wait_so_far += arg_dtimeout_ms;
+
+    _map_lock.lock(); // on loop exit (or if loop is not entered), '_map_lock' is locked.
 
     if (canLog())
     {
@@ -137,6 +151,7 @@ Semaphore::Error Semaphore::Take
 
     // unlock the maps + ret.
     _map_lock.unlock();
+    _take_lock.unlock();
     return Semaphore::E_TakeFail;
   }
 
@@ -165,6 +180,7 @@ Semaphore::Error Semaphore::Take
 
   // unlock the maps + ret.
   _map_lock.unlock();
+  _take_lock.unlock();
   return Semaphore::E_OK;
 }
 
@@ -174,7 +190,8 @@ Semaphore::Error Semaphore::Give(SemaphoreClient* arg_sem_client)
   if (arg_sem_client == nullptr) { return Semaphore::E_GiveFail; }
 
   // lock the maps to the current thread.
-  //
+  // 
+  _give_lock.lock();
   _map_lock.lock();
 
   // if 'arg_sem_client' isn't in '_working':
@@ -193,6 +210,7 @@ Semaphore::Error Semaphore::Give(SemaphoreClient* arg_sem_client)
 
     // unlock maps to other threads + ret.
     _map_lock.unlock();
+    _give_lock.unlock();
     return Semaphore::E_GiveFail;
   }
 
@@ -225,6 +243,7 @@ Semaphore::Error Semaphore::Give(SemaphoreClient* arg_sem_client)
 
   // unlock the maps to other threads + ret.
   _map_lock.unlock();
+  _give_lock.unlock();
   return Semaphore::E_OK;
 }
 
@@ -232,6 +251,7 @@ void Semaphore::DumpState()
 {
   // lock the maps to this thread.
   //   this method requires a known state for the flag indexes.
+  //   no need to lock `Take` or `Give`-- just the data structure.
   //
   _map_lock.lock();
 

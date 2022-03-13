@@ -4,7 +4,7 @@
 /**
  * loop_drone
  *   to 'drone' is to 'semaphore take', 'work', and 'semaphore give', in succession.
- *   this function 'drone's on for 'arg_total_drone_time_s' seconds.
+ *   this function 'drone's on for 'arg_total_drone_time_ms' milliseconds.
  *     while holding onto the Semaphore.
  *
  */
@@ -28,16 +28,23 @@ void loop_drone
 
   uint32_t work_time_ms     = arg_work_time_ms; // time spent working
   uint32_t sleep_time_ms    = arg_work_time_ms; // time spent sleeping, after working
-  uint32_t take_patience_ms = 200;              // max time to wait for a semaphore flag
+  uint32_t take_patience_ms = 1000;             // max time to wait for a semaphore flag
 
   while (true)
   {
     if (std::chrono::steady_clock::now() - time_entry >= time_end) { break; } // evaluate for exit.
 
     // try take + error-check.
-    Semaphore::Error e_take = arg_sem->Take(arg_sem_client, take_patience_ms, take_patience_ms);
+    Semaphore::Error e_take = arg_sem->Take(arg_sem_client, take_patience_ms, take_patience_ms / 5);
     if (e_take != Semaphore::E_OK)
     {
+      // note: i do not need a sleep period here.
+      //
+      // such a sleep-poll mechanism is already in `Semaphore::Take`, by design.
+      //
+      // to explain the above shortly (ref. Semaphore itself),
+      //   the starving thread allows an eating thread to return its flag index.
+      // 
       continue;
     }
 
@@ -93,6 +100,12 @@ int main()
   SemaphoreClient* sc_5 = new SemaphoreClient("sc_5");
 
   // make the threads.
+  // 
+  //   having a delay (`std::this_thread_sleep_for`), after thread construction (`std::thread`),
+  //     should not be necessary.
+  //
+  //   in a real application, as soon as any two threads differ in execution duration--
+  //     these offsets become meaningless.
   //
   std::thread t1( &loop_drone, sc_1, my_sem, 10000, 200 );
   std::thread t2( &loop_drone, sc_2, my_sem, 10000, 200 );

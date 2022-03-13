@@ -127,10 +127,18 @@ private:
   //   _map_lock
   //     locks access to '_working' and '_available_flags'.
   //
+  //   _take_lock
+  //     locks access to `Take`.
+  //
+  //   _give_lock
+  //     locks access to `Give`.
+  //
   std::map<SemaphoreClient*, uint32_t> _working;
   std::map<uint32_t, bool>             _available_flags;
   uint32_t                             _flag_max;
   std::mutex                           _map_lock;
+  std::mutex                           _take_lock;
+  std::mutex                           _give_lock;
 
   // private members: logging
   // 
