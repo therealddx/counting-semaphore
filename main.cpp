@@ -35,7 +35,7 @@ void loop_drone
     if (std::chrono::steady_clock::now() - time_entry >= time_end) { break; } // evaluate for exit.
 
     // try take + error-check.
-    Semaphore::Error e_take = arg_sem->Take(arg_sem_client, take_patience_ms, take_patience_ms / 5);
+    Semaphore::Error e_take = arg_sem->Take(arg_sem_client, take_patience_ms, take_patience_ms / 20);
     if (e_take != Semaphore::E_OK)
     {
       // note: i do not need a sleep period here.
@@ -98,6 +98,7 @@ int main()
   SemaphoreClient* sc_3 = new SemaphoreClient("sc_3");
   SemaphoreClient* sc_4 = new SemaphoreClient("sc_4");
   SemaphoreClient* sc_5 = new SemaphoreClient("sc_5");
+  SemaphoreClient* sc_6 = new SemaphoreClient("sc_6");
 
   // make the threads.
   // 
@@ -112,6 +113,7 @@ int main()
   std::thread t3( &loop_drone, sc_3, my_sem, 10000, 200 );
   std::thread t4( &loop_drone, sc_4, my_sem, 10000, 200 );
   std::thread t5( &loop_drone, sc_5, my_sem, 10000, 200 );
+  std::thread t6( &loop_drone, sc_6, my_sem, 10000, 200 );
   // std::thread tdump ( &loop_dump, my_sem, 10000 );
 
   t1.join();
@@ -119,6 +121,7 @@ int main()
   t3.join();
   t4.join();
   t5.join();
+  t6.join();
   // tdump.join();
 
   // cleanup.
@@ -128,6 +131,7 @@ int main()
   delete sc_3;
   delete sc_4;
   delete sc_5;
+  delete sc_6;
 
   return 0;
 }
